@@ -81,7 +81,11 @@ Route traffic by performing `adb reverse` and a few iptables rules:
 - `fah app`: try to download the currently opened app
     - `fah app dl`: same as above
     - `fah app dl <filter>`: list apps by filter and download them
-- `fah app list`: list installed app on Android device.
+- `fah app list`: list installed apps on Android device (app name/package/PID format).
+- `fah app list <filter>`: filter by app name or package.
+- `fah app start <pkg>`: start an app
+- `fah app stop <pkg>`: force-stop an app
+- `fah app clear <pkg>`: clear app data
 
 ### Android intents
 - `fah intent activity`: list activities for the currently opened app
@@ -98,17 +102,18 @@ Route traffic by performing `adb reverse` and a few iptables rules:
 - `fah intent provider com.example.app`: list providers for `com.example.app`
 - `fah intent provider com.example.app 1`: query the listed provider at index `1`
 
+### Android network capture
+- `fah netcap start`: start `tcpdump` capture on device (`-i any`) and keep running in background
+- `fah netcap start <pkg>`: capture traffic only for the app package (UID-based filter)
+- `fah netcap stop`: stop capture and automatically pull `.pcap` to current directory
+- root is required
+- `tcpdump` must exist on device (PATH or `/data/local/tmp/tcpdump`)
+
 
 ### Android clipboard
 - `fah clip`: display content of clipboard
     - `fah clip copy`: same as above
     - `fah clip paste foo bar`: set the content of the clipboard to `foo bar`
-
-
-### Android processes
-- `fah ps`: list apps/processes
-    - `fah ps foobar`: same as above but filter on `foobar`
-
 
 ## Ideas & bugs
 Ideas and bug reports are welcome! 
