@@ -8,13 +8,24 @@ from frida_android_helper.snap import *
 from frida_android_helper.cert import *
 from frida_android_helper.app import *
 from frida_android_helper.clip import *
-from frida_android_helper.ps import *
 from frida_android_helper.input import *
 from frida_android_helper.intent import *
+from frida_android_helper.netcap import *
 
 def main():
-    arg_parser = argparse.ArgumentParser(prog="fah", description="Frida Android Helper")
-    subparsers = arg_parser.add_subparsers(dest="func")
+    arg_parser = argparse.ArgumentParser(
+        prog="fah",
+        description="Frida Android Helper",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah app start com.example.app\n"
+            "  fah app clear com.example.app\n"
+            "  fah intent activity com.example.app manual\n"
+            "  fah server update 17.2.1"
+        ),
+    )
+    subparsers = arg_parser.add_subparsers(dest="func", title="commands", metavar="command")
 
     server_group = subparsers.add_parser("server", help="Manage Frida server")
     server_group.add_argument("action", type=str, help="Frida server on Android", nargs="?",
@@ -41,25 +52,157 @@ def main():
     cert_group.add_argument("install", type=str, help="Install a certificate", nargs="?")
     cert_group.add_argument("setup", type=str, help="Generate & install certificate", nargs="?")
 
-    app_group = subparsers.add_parser("app", help="List and download apps from device")
-    app_group.add_argument("action", metavar="dl", type=str, help="Download Android app", nargs="*", default=["dl"])
-    app_group.add_argument("list", type=str, help="List installed Android apps", nargs="?")
+    app_group = subparsers.add_parser(
+        "app",
+        help="App lifecycle and APK download helpers",
+        description="Manage app lifecycle and download APK files from device.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah app dl\n"
+            "  fah app dl sshdroid\n"
+            "  fah app list hana\n"
+            "  fah app start com.example.app\n"
+            "  fah app stop com.example.app\n"
+            "  fah app clear com.example.app"
+        ),
+    )
+    app_group.add_argument(
+        "action",
+        type=str,
+        nargs="?",
+        default="dl",
+        choices=("dl", "list", "start", "stop", "clear"))
+    app_group.add_argument(
+        "target",
+        type=str,
+        nargs="?",
+        default=None,
+        help=(
+            "Target package or filter.\n"
+            "  dl      : package filter (optional)\n"
+            "  list    : app name/package filter (optional)\n"
+            "  start/stop/clear : package name (recommended)"
+        ),
+    )
 
     clip_group = subparsers.add_parser("clip", help="Manage Android's clipboard")
     clip_group.add_argument("action", metavar="copy", type=str, help="Copy from Android's clipboard", nargs="*", default=["copy"])
     clip_group.add_argument("paste", type=str, help="Paste to Android's clipboard", nargs="?")
 
-    ps_group = subparsers.add_parser("ps", help="List Android's processes")
-    ps_group.add_argument("action", metavar="ps", type=str, help="List Android's processes", nargs="*", default=None)
-
     input_group = subparsers.add_parser("input", help="Input manipulation")
     input_group.add_argument("action", metavar="text", type=str, help="Write to input", nargs="*", default=None)
 
-    intent_group = subparsers.add_parser("intent", help="Intent helpers")
-    intent_group.add_argument("action", type=str, help="Intent helper action", nargs="?", default="activity",
-                              choices=("activity", "service", "receiver", "provider"))
-    intent_group.add_argument("packagename", type=str, help="Specify package name", nargs="?", default=None)
-    intent_group.add_argument("target", type=str, help="Component index or name", nargs="?", default=None)
+    intent_group = subparsers.add_parser(
+        "intent",
+        help="Component listing and quick trigger helpers",
+        description="List or trigger Android components parsed from AndroidManifest.xml.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah intent activity com.example.app\n"
+            "  fah intent activity com.example.app 7\n"
+            "  fah intent activity com.example.app manual\n"
+            "  fah intent service com.example.app\n"
+            "  fah intent receiver com.example.app 2\n"
+            "  fah intent provider com.example.app 1"
+        ),
+    )
+    intent_subparsers = intent_group.add_subparsers(dest="intent_action", title="intent commands", metavar="intent_command")
+
+    common_target_help = (
+        "Optional target:\n"
+        "  <index>      run selected entry\n"
+        "  <component>  run by full/short component name\n"
+        "  manual       print shell-ready commands"
+    )
+
+    intent_activity = intent_subparsers.add_parser(
+        "activity",
+        help="List/trigger activities",
+        description="List or trigger activities.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah intent activity com.example.app\n"
+            "  fah intent activity com.example.app 7\n"
+            "  fah intent activity com.example.app manual"
+        ),
+    )
+    intent_activity.add_argument("packagename", type=str, help="Package name (optional: uses focused app)", nargs="?", default=None)
+    intent_activity.add_argument("target", type=str, help=common_target_help, nargs="?", default=None)
+
+    intent_service = intent_subparsers.add_parser(
+        "service",
+        help="List/trigger services",
+        description="List or trigger services.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah intent service com.example.app\n"
+            "  fah intent service com.example.app 3\n"
+            "  fah intent service com.example.app manual"
+        ),
+    )
+    intent_service.add_argument("packagename", type=str, help="Package name (optional: uses focused app)", nargs="?", default=None)
+    intent_service.add_argument("target", type=str, help=common_target_help, nargs="?", default=None)
+
+    intent_receiver = intent_subparsers.add_parser(
+        "receiver",
+        help="List/trigger receivers",
+        description="List or trigger receivers.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah intent receiver com.example.app\n"
+            "  fah intent receiver com.example.app 2\n"
+            "  fah intent receiver com.example.app manual"
+        ),
+    )
+    intent_receiver.add_argument("packagename", type=str, help="Package name (optional: uses focused app)", nargs="?", default=None)
+    intent_receiver.add_argument("target", type=str, help=common_target_help, nargs="?", default=None)
+
+    intent_provider = intent_subparsers.add_parser(
+        "provider",
+        help="List/trigger providers",
+        description="List or trigger providers.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah intent provider com.example.app\n"
+            "  fah intent provider com.example.app 1\n"
+            "  fah intent provider com.example.app manual"
+        ),
+    )
+    intent_provider.add_argument("packagename", type=str, help="Package name (optional: uses focused app)", nargs="?", default=None)
+    intent_provider.add_argument("target", type=str, help=common_target_help, nargs="?", default=None)
+
+    netcap_group = subparsers.add_parser(
+        "netcap",
+        help="Capture device network traffic with tcpdump",
+        description="Start/stop tcpdump capture on device and pull the resulting pcap file.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah netcap start\n"
+            "  fah netcap start com.example.app\n"
+            "  fah netcap stop"
+        ),
+    )
+    netcap_group.add_argument(
+        "action",
+        type=str,
+        nargs="?",
+        default="start",
+        choices=("start", "stop"),
+    )
+    netcap_group.add_argument(
+        "target",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Optional package name for start action (captures only that app's UID traffic).",
+    )
 
     args = arg_parser.parse_args()
     if not args.func:
@@ -97,8 +240,11 @@ def main():
         app_route = {
             "dl": download_app,
             "list": list_apps,
+            "start": start_app,
+            "stop": stop_app,
+            "clear": clear_app,
         }
-        app_route.get(args.action[0], download_app)(*args.action[1:2])
+        app_route.get(args.action, download_app)(args.target)
     elif args.func == "clip":
         if args.action[0] == "copy":
             copy_from_clipboard()
@@ -112,20 +258,25 @@ def main():
             "disable": disable_rproxy
         }
         rproxy_route.get(args.action[0], enable_rproxy)(*args.action[1:2])
-    elif args.func == "ps":
-        list_processes(" ".join(args.action))
     elif args.func == "input":
         if args.action[0] == "text":
             input_text(" ".join(args.action[1:]))
     elif args.func == "intent":
-        if args.action == "activity":
+        if not args.intent_action:
+            intent_group.print_help()
+        elif args.intent_action == "activity":
             list_activities(args.packagename, args.target)
-        elif args.action == "service":
+        elif args.intent_action == "service":
             list_services(args.packagename, args.target)
-        elif args.action == "receiver":
+        elif args.intent_action == "receiver":
             list_receivers(args.packagename, args.target)
-        elif args.action == "provider":
+        elif args.intent_action == "provider":
             list_providers(args.packagename, args.target)
+    elif args.func == "netcap":
+        if args.action == "start":
+            start_netcap(args.target)
+        elif args.action == "stop":
+            stop_netcap()
     # print(args) # debugging purposes
 
 
