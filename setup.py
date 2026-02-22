@@ -1,8 +1,7 @@
-import setuptools
-from distutils.core import setup
+from setuptools import setup
 
-with open("requirements.txt") as f:
-    requirements = f.readlines()
+with open("requirements.txt", encoding="utf-8") as f:
+    requirements = [line.strip() for line in f if line.strip()]
 
 
 setup(
