@@ -1,12 +1,15 @@
 import os
-import re
-import shutil
-import subprocess
 import tempfile
 
 from frida_android_helper.utils import *
 
-_MANIFEST_NAME_PATTERN = re.compile(r'A: android:name(?:\([^)]*\))?="([^"]+)"')
+try:
+    from androguard.core.apk import APK
+except ImportError:
+    # Backward compatibility with older androguard layouts.
+    from androguard.core.bytecodes.apk import APK
+
+ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
 
 
 def _normalize_activity_name(packagename, activity_name):
@@ -19,68 +22,50 @@ def _normalize_activity_name(packagename, activity_name):
     return "{}/{}".format(packagename, fqcn)
 
 
-def _get_base_apk_path(device, packagename):
+def _get_apk_paths(device, packagename):
     result = perform_cmd(device, "pm path {}".format(packagename))
     paths = []
     for line in result.splitlines():
         line = line.strip()
         if line.startswith("package:"):
             paths.append(line[len("package:"):])
-
-    if not paths:
-        return None
-
-    for path in paths:
-        if path.endswith("/base.apk"):
-            return path
-    return paths[0]
+    return paths
 
 
-def _extract_activities_from_manifest(apk_path, packagename):
-    aapt_path = shutil.which("aapt")
-    if not aapt_path:
-        eprint("aapt not found in PATH. Install Android build-tools or add aapt to PATH.")
+def _extract_activities_from_manifest(apk_path, fallback_packagename):
+    try:
+        apk = APK(apk_path)
+    except Exception as err:
+        eprint("Failed to parse APK manifest {}: {}".format(apk_path, err))
         return None
 
     try:
-        output = subprocess.run(
-            [aapt_path, "dump", "xmltree", apk_path, "AndroidManifest.xml"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="ignore",
-            check=False,
-        )
+        manifest = apk.get_android_manifest_xml()
     except Exception as err:
-        eprint("Failed to run aapt: {}".format(err))
+        eprint("Failed to read AndroidManifest.xml from {}: {}".format(apk_path, err))
         return None
 
-    if output.returncode != 0:
-        eprint("aapt failed: {}".format(output.stderr.strip()))
+    if manifest is None:
+        eprint("AndroidManifest.xml not found in {}.".format(apk_path))
         return None
 
+    package_name = apk.get_package() or fallback_packagename
     activities = []
-    in_activity = False
-    activity_indent = 0
-
-    for raw_line in output.stdout.splitlines():
-        indent = len(raw_line) - len(raw_line.lstrip())
-        line = raw_line.strip()
-
-        if line.startswith("E: activity ") or line.startswith("E: activity-alias "):
-            in_activity = True
-            activity_indent = indent
+    for node in manifest.iter():
+        tag = node.tag
+        if not isinstance(tag, str):
             continue
 
-        if in_activity and line.startswith("E: ") and indent <= activity_indent:
-            in_activity = False
-
-        if not in_activity:
+        if "}" in tag:
+            tag = tag.split("}", 1)[1]
+        if tag not in ("activity", "activity-alias"):
             continue
 
-        match = _MANIFEST_NAME_PATTERN.search(line)
-        if match:
-            activities.append(_normalize_activity_name(packagename, match.group(1)))
+        activity_name = node.get("{}name".format(ANDROID_NS)) or node.get("name")
+        if not activity_name:
+            continue
+
+        activities.append(_normalize_activity_name(package_name, activity_name))
 
     return list(dict.fromkeys(activities))
 
@@ -94,23 +79,27 @@ def list_activities(packagename=None):
             continue
 
         eprint("Listing activities for {}...".format(current_package))
-        apk_path = _get_base_apk_path(device, current_package)
-        if apk_path is None:
+        apk_paths = _get_apk_paths(device, current_package)
+        if not apk_paths:
             eprint("Failed to locate APK path for {}.".format(current_package))
             continue
 
+        all_activities = []
         with tempfile.TemporaryDirectory(prefix="fah_manifest_") as temp_dir:
-            local_apk = os.path.join(temp_dir, "base.apk")
-            try:
-                device.pull(apk_path, local_apk)
-            except Exception as err:
-                eprint("Failed to pull APK {}: {}".format(apk_path, err))
-                continue
+            for index, apk_path in enumerate(apk_paths):
+                local_apk = os.path.join(temp_dir, "apk_{}.apk".format(index))
+                try:
+                    device.pull(apk_path, local_apk)
+                except Exception as err:
+                    eprint("Failed to pull APK {}: {}".format(apk_path, err))
+                    continue
 
-            activities = _extract_activities_from_manifest(local_apk, current_package)
+                activities = _extract_activities_from_manifest(local_apk, current_package)
+                if activities is None:
+                    continue
+                all_activities.extend(activities)
 
-        if activities is None:
-            continue
+        activities = list(dict.fromkeys(all_activities))
         if not activities:
             eprint("No activities found for {}.".format(current_package))
             continue
