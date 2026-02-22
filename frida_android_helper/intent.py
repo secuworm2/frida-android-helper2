@@ -3,7 +3,25 @@ import re
 from frida_android_helper.utils import *
 
 _COMPONENT_PATTERN = re.compile(r"([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)")
+_CLASS_HEADER_PATTERN = re.compile(r"^([A-Za-z0-9_.$]+):$")
+_CLASS_ASSIGNMENT_PATTERN = re.compile(r"(?:Class=|name=)([A-Za-z0-9_.$]+)")
 _SECTION_END_PATTERN = re.compile(r"^[A-Z][A-Za-z0-9 ]+:$")
+
+
+def _normalize_component(packagename, component):
+    if "/" in component:
+        component_pkg, component_name = component.split("/", 1)
+        if component_pkg != packagename:
+            return None
+        if component_name.startswith("."):
+            component_name = "{}{}".format(packagename, component_name)
+        return "{}/{}".format(packagename, component_name)
+
+    if component.startswith("."):
+        component = "{}{}".format(packagename, component)
+    if not component.startswith("{}.".format(packagename)):
+        return None
+    return "{}/{}".format(packagename, component)
 
 
 def _extract_activity_components(packagename, package_dump):
@@ -29,15 +47,34 @@ def _extract_activity_components(packagename, package_dump):
             in_activities = False
             continue
 
-        if in_activity_resolver or in_activities:
+        if in_activity_resolver:
             for component in _COMPONENT_PATTERN.findall(line):
-                if component.startswith("{}/".format(packagename)):
-                    components.append(component)
+                normalized = _normalize_component(packagename, component)
+                if normalized:
+                    components.append(normalized)
+
+        if in_activities:
+            for component in _COMPONENT_PATTERN.findall(line):
+                normalized = _normalize_component(packagename, component)
+                if normalized:
+                    components.append(normalized)
+
+            class_header_match = _CLASS_HEADER_PATTERN.match(line)
+            if class_header_match:
+                normalized = _normalize_component(packagename, class_header_match.group(1))
+                if normalized:
+                    components.append(normalized)
+
+            for class_name in _CLASS_ASSIGNMENT_PATTERN.findall(line):
+                normalized = _normalize_component(packagename, class_name)
+                if normalized:
+                    components.append(normalized)
 
     if not components:
         for component in _COMPONENT_PATTERN.findall(package_dump):
-            if component.startswith("{}/".format(packagename)):
-                components.append(component)
+            normalized = _normalize_component(packagename, component)
+            if normalized:
+                components.append(normalized)
 
     # Preserve order while removing duplicates.
     return list(dict.fromkeys(components))
