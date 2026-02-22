@@ -3,9 +3,10 @@ import re
 from frida_android_helper.utils import *
 
 _COMPONENT_PATTERN = re.compile(r"([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)")
+_ACTIVITY_OBJECT_PATTERN = re.compile(r"(?:Activity|ActivityAlias)\{[^}]*\s([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)\}")
 _CLASS_HEADER_PATTERN = re.compile(r"^([A-Za-z0-9_.$]+):$")
 _CLASS_ASSIGNMENT_PATTERN = re.compile(r"(?:Class=|name=)([A-Za-z0-9_.$]+)")
-_SECTION_END_PATTERN = re.compile(r"^[A-Z][A-Za-z0-9 ]+:$")
+_SECTION_END_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9 ]+:$")
 
 
 def _normalize_component(packagename, component):
@@ -35,7 +36,7 @@ def _extract_activity_components(packagename, package_dump):
         if line == "Activity Resolver Table:":
             in_activity_resolver = True
             continue
-        if line == "Activities:":
+        if line.lower() == "activities:":
             in_activities = True
             continue
 
@@ -43,7 +44,7 @@ def _extract_activity_components(packagename, package_dump):
             in_activity_resolver = False
             continue
 
-        if in_activities and _SECTION_END_PATTERN.match(line) and line != "Activities:":
+        if in_activities and _SECTION_END_PATTERN.match(line) and line.lower() != "activities:":
             in_activities = False
             continue
 
@@ -70,11 +71,17 @@ def _extract_activity_components(packagename, package_dump):
                 if normalized:
                     components.append(normalized)
 
-    if not components:
-        for component in _COMPONENT_PATTERN.findall(package_dump):
-            normalized = _normalize_component(packagename, component)
-            if normalized:
-                components.append(normalized)
+    # Package dump commonly contains full activity declarations as Activity{... pkg/.Class}.
+    # Parse these globally so we do not miss non-exported activities.
+    for component in _ACTIVITY_OBJECT_PATTERN.findall(package_dump):
+        normalized = _normalize_component(packagename, component)
+        if normalized:
+            components.append(normalized)
+
+    for component in _COMPONENT_PATTERN.findall(package_dump):
+        normalized = _normalize_component(packagename, component)
+        if normalized:
+            components.append(normalized)
 
     # Preserve order while removing duplicates.
     return list(dict.fromkeys(components))
