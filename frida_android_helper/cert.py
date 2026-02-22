@@ -4,8 +4,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography import x509
 from datetime import datetime, timedelta
 from uuid import uuid4
+from importlib import resources
 from frida_android_helper.utils import *
-import pkg_resources
 import shutil
 import appdirs
 import os
@@ -140,9 +140,10 @@ def install_certificate(certificate=None):
             eprint("    for more info, see: https://www.g1a55er.net/Android-14-Still-Allows-Modification-of-System-Certificates")
             path_cacerts = "/apex/com.android.conscrypt/cacerts"
 
-            script = pkg_resources.resource_filename("frida_android_helper", "scripts/android14_apex.sh")
+            script = resources.files("frida_android_helper").joinpath("scripts", "android14_apex.sh")
             eprint("🔥 Pushing android14_apex.sh script to /data/local/tmp/android14_apex.sh...")
-            device.push(script, "/data/local/tmp/android14_apex.sh")
+            with resources.as_file(script) as script_path:
+                device.push(str(script_path), "/data/local/tmp/android14_apex.sh")
 
             eprint("🔥 chmod +x /data/local/tmp/android14_apex.sh...")
             err = perform_cmd(device, "chmod +x /data/local/tmp/android14_apex.sh", root=True)
