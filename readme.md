@@ -26,94 +26,113 @@ Commands are self explanatory. Ask for help `fah --help`.
 
 ### Frida-server management
 
-- Start the frida-server `fah server start`
-- Stop the frida-server `fah server stop`
-- Reboot the frida-server `fah server reboot`
-- Update the frida-server `fah server update`: The latest Android frida-server is fetched from GitHub
-release page using the GitHub API and installed on the Android device using `fah server update` command.
-- Install a specific frida-server version `fah server update 17.2.1`: installs that exact version on the device.
+| Command | Description |
+| --- | --- |
+| `fah server start` | Start frida-server on device. |
+| `fah server stop` | Stop frida-server on device. |
+| `fah server reboot` | Reboot frida-server on device. |
+| `fah server update` | Install the latest frida-server release from GitHub. |
+| `fah server update 17.2.1` | Install a specific frida-server version. |
 
 
 ### Android proxy configuration
 
-- Enable proxy:
-    - `fah proxy`: will automatically select an IP address from your PC, default port 8080
-    - `fah proxy enable`: same as above
-    - `fah proxy enable 192.168.137.137`: specify IP address, default port 8080
-    - `fah proxy enable 192.168.137.137 8888`: specify IP address and port
-- Disable proxy `fah proxy disable`
-- Get current proxy settings `fah proxy get`
+| Command | Description |
+| --- | --- |
+| `fah proxy` | Enable proxy with auto-detected host IP and default port `8080`. |
+| `fah proxy enable` | Same as `fah proxy`. |
+| `fah proxy enable 192.168.137.137` | Enable proxy with custom host IP and default port `8080`. |
+| `fah proxy enable 192.168.137.137 8888` | Enable proxy with custom host and port. |
+| `fah proxy disable` | Disable global Android proxy settings. |
+| `fah proxy get` | Print current proxy-related settings. |
 
 
 ### Android proxy via reverse tethering configuration
-Route traffic by performing `adb reverse` and a few iptables rules: 
-1. Connect your Android mobile device via USB
-2. Setup an intercepting proxy (ex: Burp)
-3. Configure intercepting proxy to use transparent proxy
-4. Connect to random wifi hotspot on Android device 
+Route traffic through `adb reverse` + iptables DNAT rules.
 
-- Enable rproxy:
-    - `fah rproxy`: will use default port 8844
-    - `fah rproxy enable`: same as above
-    - `fah rproxy enable 8888`: specify port
-- Disable rproxy:
-    - `fah rproxy disable`: will use default port 8844
-    - `fah rproxy disable 8888`: specify port
+| Command | Description |
+| --- | --- |
+| `fah rproxy` | Enable reverse-tether proxy on default port `8844`. |
+| `fah rproxy enable` | Same as `fah rproxy`. |
+| `fah rproxy enable 8888` | Enable reverse-tether proxy on a custom port. |
+| `fah rproxy disable` | Disable reverse-tether proxy on default port `8844`. |
+| `fah rproxy disable 8888` | Disable reverse-tether proxy on a custom port. |
+
+Recommended flow:
+1. Connect device via USB.
+2. Start intercepting proxy (e.g. Burp) in transparent mode.
+3. Connect device to any Wi-Fi network.
 
 
 ### Android screenshot
-- `fah screen`: take a screenshot with the following format `deviceID_%Y.%m.%d_%H.%M.%S.png`
-    - `fah screen filename`: take a screenshot with the following format: `deviceID_filename.png`
+| Command | Description |
+| --- | --- |
+| `fah screen` | Save screenshot as `deviceID_%Y.%m.%d_%H.%M.%S.png`. |
+| `fah screen filename` | Save screenshot as `deviceID_filename.png`. |
 
 
 ### Android disk snapshot
-- `fah snap`: take a disk snapshot of the current open app
-    - `fah snap com.example.app`: take a disk snapshot of `com.example.app` app
+| Command | Description |
+| --- | --- |
+| `fah snap` | Snapshot current focused app data directory. |
+| `fah snap com.example.app` | Snapshot specified app data directory. |
 
 
 ### Android certificate creation & installation for mitm purposes
-- `fah cert`: generate a custom CA certificate to be imported in burp & device
-    - `fah cert generate`: same as above
-    - `fah cert install`: install specified certificate on device
-    - `fah cert setup`: generate and install certificate (above commands combined)
+| Command | Description |
+| --- | --- |
+| `fah cert` | Generate custom CA certificate for MITM use. |
+| `fah cert generate` | Same as `fah cert`. |
+| `fah cert install` | Install a certificate on device. |
+| `fah cert setup` | Generate and install certificate in one step. |
 
 ### Android app
-- `fah app`: try to download the currently opened app
-    - `fah app dl`: same as above
-    - `fah app dl <filter>`: list apps by filter and download them
-- `fah app list`: list installed apps on Android device (app name/package/PID format).
-- `fah app list <filter>`: filter by app name or package.
-- `fah app start <pkg>`: start an app
-- `fah app stop <pkg>`: force-stop an app
-- `fah app clear <pkg>`: clear app data
+| Command | Description |
+| --- | --- |
+| `fah app` | Download the currently focused app APK(s). |
+| `fah app dl` | Same as `fah app`. |
+| `fah app dl <filter>` | Find packages by filter and download APK(s). |
+| `fah app list` | List installed apps in `name (package) [pid]` format. |
+| `fah app list <filter>` | Filter app list by app name or package. |
+| `fah app start <pkg>` | Start app launcher activity. |
+| `fah app stop <pkg>` | Force-stop app process. |
+| `fah app clear <pkg>` | Clear app data (`pm clear`). |
 
 ### Android intents
-- `fah intent activity`: list activities for the currently opened app
-- `fah intent activity com.example.app`: list activities for `com.example.app`
-- `fah intent activity com.example.app 7`: start the listed activity at index `7`
-- `fah intent activity com.example.app manual`: print manual adb commands for all listed activities
-- `fah intent service`: list services for the currently opened app
-- `fah intent service com.example.app`: list services for `com.example.app`
-- `fah intent service com.example.app 3`: start the listed service at index `3`
-- `fah intent receiver`: list receivers for the currently opened app
-- `fah intent receiver com.example.app`: list receivers for `com.example.app`
-- `fah intent receiver com.example.app 2`: broadcast to the listed receiver at index `2`
-- `fah intent provider`: list providers for the currently opened app
-- `fah intent provider com.example.app`: list providers for `com.example.app`
-- `fah intent provider com.example.app 1`: query the listed provider at index `1`
+Syntax: `fah intent <type> [package] [target]`
+
+Arguments:
+| Name | Meaning |
+| --- | --- |
+| `<type>` | `activity` \| `service` \| `receiver` \| `provider` |
+| `[package]` | Optional package name. If omitted, uses focused app. |
+| `[target]` | Optional target: `<index>`, `<component>`, or `manual`. |
+
+Component commands:
+| Type | List | Run by index | Manual output |
+| --- | --- | --- | --- |
+| `activity` | `fah intent activity com.example.app` | `fah intent activity com.example.app 7` | `fah intent activity com.example.app manual` |
+| `service` | `fah intent service com.example.app` | `fah intent service com.example.app 3` | `fah intent service com.example.app manual` |
+| `receiver` | `fah intent receiver com.example.app` | `fah intent receiver com.example.app 2` | `fah intent receiver com.example.app manual` |
+| `provider` | `fah intent provider com.example.app` | `fah intent provider com.example.app 1` | `fah intent provider com.example.app manual` |
 
 ### Android network capture
-- `fah netcap start`: start `tcpdump` capture on device (`-i any`) and keep running in background
-- `fah netcap start <pkg>`: capture traffic only for the app package (UID-based filter)
-- `fah netcap stop`: stop capture and automatically pull `.pcap` to current directory
-- root is required
-- `tcpdump` must exist on device (PATH or `/data/local/tmp/tcpdump`)
+| Command | Description |
+| --- | --- |
+| `fah netcap start` | Start background `tcpdump` capture on device (`-i any`). |
+| `fah netcap start <pkg>` | Start capture with package UID filter (if supported by tcpdump). |
+| `fah netcap stop` | Stop capture and pull `.pcap` to current directory. |
 
+Requirements:
+- Rooted device.
+- `tcpdump` available on device (`PATH` or `/data/local/tmp/tcpdump`).
 
 ### Android clipboard
-- `fah clip`: display content of clipboard
-    - `fah clip copy`: same as above
-    - `fah clip paste foo bar`: set the content of the clipboard to `foo bar`
+| Command | Description |
+| --- | --- |
+| `fah clip` | Show Android clipboard content. |
+| `fah clip copy` | Same as `fah clip`. |
+| `fah clip paste foo bar` | Set clipboard text to `foo bar`. |
 
 ## Ideas & bugs
 Ideas and bug reports are welcome! 
