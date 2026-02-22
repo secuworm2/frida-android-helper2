@@ -18,6 +18,7 @@ def main():
     server_group = subparsers.add_parser("server", help="Manage Frida server")
     server_group.add_argument("action", type=str, help="Frida server on Android", nargs="?",
                               choices=("start", "stop", "reboot", "update"))
+    server_group.add_argument("version", type=str, help="Frida version used by update (e.g. 17.2.1)", nargs="?")
 
     proxy_group = subparsers.add_parser("proxy", help="Configure Android proxy")
     proxy_group.add_argument("action", metavar="enable", type=str, help="Enable Android proxy", nargs="*", default=["set"])
@@ -58,13 +59,15 @@ def main():
         arg_parser.print_help()
 
     if args.func == "server":
-        server_route = {
-            "start": start_server,
-            "stop": stop_server,
-            "reboot": reboot_server,
-            "update": update_server
-        }
-        server_route.get(args.action, start_server)()
+        if args.action == "update":
+            update_server(args.version)
+        else:
+            server_route = {
+                "start": start_server,
+                "stop": stop_server,
+                "reboot": reboot_server,
+            }
+            server_route.get(args.action, start_server)()
     elif args.func == "proxy":
         proxy_route = {
             "enable": enable_proxy,
@@ -107,7 +110,7 @@ def main():
     elif args.func == "input":
         if args.action[0] == "text":
             input_text(" ".join(args.action[1:]))
-    #print(args) # debugging purposes
+    # print(args) # debugging purposes
 
 
 if __name__ == "__main__":
