@@ -87,6 +87,16 @@ Route traffic by performing `adb reverse` and a few iptables rules:
 - `fah intent activity`: list activities for the currently opened app
 - `fah intent activity com.example.app`: list activities for `com.example.app`
 - `fah intent activity com.example.app 7`: start the listed activity at index `7`
+- `fah intent activity com.example.app manual`: print manual adb commands for all listed activities
+- `fah intent service`: list services for the currently opened app
+- `fah intent service com.example.app`: list services for `com.example.app`
+- `fah intent service com.example.app 3`: start the listed service at index `3`
+- `fah intent receiver`: list receivers for the currently opened app
+- `fah intent receiver com.example.app`: list receivers for `com.example.app`
+- `fah intent receiver com.example.app 2`: broadcast to the listed receiver at index `2`
+- `fah intent provider`: list providers for the currently opened app
+- `fah intent provider com.example.app`: list providers for `com.example.app`
+- `fah intent provider com.example.app 1`: query the listed provider at index `1`
 
 
 ### Android clipboard

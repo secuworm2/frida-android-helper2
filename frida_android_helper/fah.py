@@ -57,9 +57,9 @@ def main():
 
     intent_group = subparsers.add_parser("intent", help="Intent helpers")
     intent_group.add_argument("action", type=str, help="Intent helper action", nargs="?", default="activity",
-                              choices=("activity",))
+                              choices=("activity", "service", "receiver", "provider"))
     intent_group.add_argument("packagename", type=str, help="Specify package name", nargs="?", default=None)
-    intent_group.add_argument("target", type=str, help="Activity index or name", nargs="?", default=None)
+    intent_group.add_argument("target", type=str, help="Component index or name", nargs="?", default=None)
 
     args = arg_parser.parse_args()
     if not args.func:
@@ -120,6 +120,12 @@ def main():
     elif args.func == "intent":
         if args.action == "activity":
             list_activities(args.packagename, args.target)
+        elif args.action == "service":
+            list_services(args.packagename, args.target)
+        elif args.action == "receiver":
+            list_receivers(args.packagename, args.target)
+        elif args.action == "provider":
+            list_providers(args.packagename, args.target)
     # print(args) # debugging purposes
 
 
