@@ -1,6 +1,6 @@
+import logging
 import os
 import tempfile
-import logging
 
 from frida_android_helper.utils import *
 
@@ -11,6 +11,12 @@ except ImportError:
     from androguard.core.bytecodes.apk import APK
 
 ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
+COMPONENT_TAGS = {
+    "activity": ("activity", "activity-alias"),
+    "service": ("service",),
+    "receiver": ("receiver",),
+    "provider": ("provider",),
+}
 
 
 def _silence_androguard_logs():
@@ -25,13 +31,13 @@ def _silence_androguard_logs():
 _silence_androguard_logs()
 
 
-def _normalize_activity_name(packagename, activity_name):
-    if activity_name.startswith("."):
-        fqcn = "{}{}".format(packagename, activity_name)
-    elif "." in activity_name:
-        fqcn = activity_name
+def _normalize_component_name(packagename, component_name):
+    if component_name.startswith("."):
+        fqcn = "{}{}".format(packagename, component_name)
+    elif "." in component_name:
+        fqcn = component_name
     else:
-        fqcn = "{}.{}".format(packagename, activity_name)
+        fqcn = "{}.{}".format(packagename, component_name)
     return "{}/{}".format(packagename, fqcn)
 
 
@@ -45,7 +51,11 @@ def _get_apk_paths(device, packagename):
     return paths
 
 
-def _extract_activities_from_manifest(apk_path, fallback_packagename):
+def _extract_components_from_manifest(apk_path, fallback_packagename, component_type):
+    tags = COMPONENT_TAGS.get(component_type)
+    if not tags:
+        return []
+
     try:
         apk = APK(apk_path)
     except Exception as err:
@@ -63,7 +73,9 @@ def _extract_activities_from_manifest(apk_path, fallback_packagename):
         return None
 
     package_name = apk.get_package() or fallback_packagename
-    activities = []
+    components = []
+    seen = set()
+
     for node in manifest.iter():
         tag = node.tag
         if not isinstance(tag, str):
@@ -71,25 +83,56 @@ def _extract_activities_from_manifest(apk_path, fallback_packagename):
 
         if "}" in tag:
             tag = tag.split("}", 1)[1]
-        if tag not in ("activity", "activity-alias"):
+        if tag not in tags:
             continue
 
-        activity_name = node.get("{}name".format(ANDROID_NS)) or node.get("name")
-        if not activity_name:
+        component_name = node.get("{}name".format(ANDROID_NS)) or node.get("name")
+        if not component_name:
             continue
 
-        activities.append(_normalize_activity_name(package_name, activity_name))
+        normalized_component = _normalize_component_name(package_name, component_name)
+        if component_type != "provider":
+            key = (normalized_component, None)
+            if key not in seen:
+                seen.add(key)
+                components.append({
+                    "component": normalized_component,
+                    "authority": None,
+                })
+            continue
 
-    return list(dict.fromkeys(activities))
+        authorities_value = node.get("{}authorities".format(ANDROID_NS)) or node.get("authorities") or ""
+        authorities = [a.strip() for a in authorities_value.split(";") if a.strip()]
+        if not authorities:
+            key = (normalized_component, None)
+            if key not in seen:
+                seen.add(key)
+                components.append({
+                    "component": normalized_component,
+                    "authority": None,
+                })
+            continue
+
+        for authority in authorities:
+            key = (normalized_component, authority)
+            if key in seen:
+                continue
+            seen.add(key)
+            components.append({
+                "component": normalized_component,
+                "authority": authority,
+            })
+
+    return components
 
 
-def _collect_activities_for_device(device, packagename):
+def _collect_components_for_device(device, packagename, component_type):
     apk_paths = _get_apk_paths(device, packagename)
     if not apk_paths:
         eprint("Failed to locate APK path for {}.".format(packagename))
         return []
 
-    all_activities = []
+    all_components = []
     with tempfile.TemporaryDirectory(prefix="fah_manifest_") as temp_dir:
         for index, apk_path in enumerate(apk_paths):
             local_apk = os.path.join(temp_dir, "apk_{}.apk".format(index))
@@ -99,37 +142,127 @@ def _collect_activities_for_device(device, packagename):
                 eprint("Failed to pull APK {}: {}".format(apk_path, err))
                 continue
 
-            activities = _extract_activities_from_manifest(local_apk, packagename)
-            if activities is None:
+            components = _extract_components_from_manifest(local_apk, packagename, component_type)
+            if components is None:
                 continue
-            all_activities.extend(activities)
+            all_components.extend(components)
 
-    return list(dict.fromkeys(all_activities))
+    deduped = []
+    seen = set()
+    for component in all_components:
+        key = (component.get("component"), component.get("authority"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(component)
+    return deduped
 
 
-def _resolve_target_component(packagename, activities, target):
+def _resolve_target_component(packagename, components, target, component_type):
     if target is None:
         return None
 
     if target.isdigit():
         index = int(target)
-        if index < 1 or index > len(activities):
-            eprint("Invalid activity index: {} (valid range: 1-{})".format(index, len(activities)))
+        if index < 1 or index > len(components):
+            eprint("Invalid {} index: {} (valid range: 1-{})".format(component_type, index, len(components)))
             return None
-        return activities[index - 1]
+        return components[index - 1]
+
+    if component_type == "provider":
+        provider_authority = target
+        if provider_authority.startswith("content://"):
+            provider_authority = provider_authority[len("content://"):]
+        provider_authority = provider_authority.split("/", 1)[0]
+        for entry in components:
+            if entry.get("authority") == provider_authority:
+                return entry
 
     if "/" in target:
         if target.startswith("{}/".format(packagename)):
-            return target
+            normalized_target = target
+            for entry in components:
+                if entry.get("component") == normalized_target:
+                    return entry
+            return {
+                "component": normalized_target,
+                "authority": None,
+            }
         eprint("Target component must start with '{}/'.".format(packagename))
         return None
 
-    return _normalize_activity_name(packagename, target)
+    normalized_target = _normalize_component_name(packagename, target)
+    for entry in components:
+        if entry.get("component") == normalized_target:
+            return entry
+
+    return {
+        "component": normalized_target,
+        "authority": None,
+    }
 
 
-def _start_activity(device, component):
-    eprint("Starting activity {}...".format(component))
-    output = perform_cmd(device, "am start -n {}".format(component))
+def _format_component(entry, component_type):
+    component = entry.get("component")
+    authority = entry.get("authority")
+    if component_type == "provider":
+        if authority:
+            return "{} (authority={})".format(component, authority)
+        return "{} (authority=<none>)".format(component)
+    return component
+
+
+def _build_manual_commands(entry, component_type):
+    component = entry.get("component")
+    authority = entry.get("authority")
+
+    if component_type == "activity":
+        return "am start -n {}".format(component)
+    if component_type == "service":
+        return "am startservice -n {}".format(component)
+    if component_type == "receiver":
+        return "am broadcast -n {} -a fah.intent.TEST".format(component)
+    if component_type == "provider":
+        if not authority:
+            return None
+        return "content query --uri content://{}".format(authority)
+    return None
+
+
+def _print_manual_commands(device, components, component_type):
+    serial_no = device.get_serial_no()
+    eprint("Manual commands for {} on device {} (run inside adb shell):".format(component_type, serial_no))
+    for entry in components:
+        cmd = _build_manual_commands(entry, component_type)
+        if not cmd:
+            eprint("Skipping {} (authority missing)".format(_format_component(entry, component_type)))
+            continue
+        print(cmd)
+
+
+def _start_component(device, entry, component_type):
+    component = entry.get("component")
+    authority = entry.get("authority")
+    if component_type == "activity":
+        eprint("Starting activity {}...".format(component))
+        cmd = "am start -n {}".format(component)
+    elif component_type == "service":
+        eprint("Starting service {}...".format(component))
+        cmd = "am startservice -n {}".format(component)
+    elif component_type == "receiver":
+        eprint("Broadcasting receiver {}...".format(component))
+        cmd = "am broadcast -n {} -a fah.intent.TEST".format(component)
+    elif component_type == "provider":
+        if not authority:
+            eprint("Provider '{}' has no authority, cannot query it directly.".format(component))
+            return
+        eprint("Querying provider {} (authority={})...".format(component, authority))
+        cmd = "content query --uri content://{}".format(authority)
+    else:
+        eprint("Unsupported component type: {}".format(component_type))
+        return
+
+    output = perform_cmd(device, cmd)
     denied_markers = (
         "Permission Denial",
         "not exported",
@@ -137,12 +270,12 @@ def _start_activity(device, component):
     )
     if any(marker in output for marker in denied_markers):
         eprint("Permission denied, retrying with root...")
-        output = perform_cmd(device, "am start -n {}".format(component), root=True)
+        output = perform_cmd(device, cmd, root=True)
     if output:
         print(output.strip())
 
 
-def list_activities(packagename=None, target=None):
+def list_components(component_type, packagename=None, target=None):
     for device in get_adb_devices():
         eprint("Device: {} ({})".format(get_device_model(device), device.get_serial_no()))
         current_package = packagename or get_current_app_focus(device)
@@ -150,18 +283,38 @@ def list_activities(packagename=None, target=None):
             eprint("No app is open, specify package name.")
             continue
 
-        eprint("Listing activities for {}...".format(current_package))
-        activities = _collect_activities_for_device(device, current_package)
-        if not activities:
-            eprint("No activities found for {}.".format(current_package))
+        eprint("Listing {}s for {}...".format(component_type, current_package))
+        components = _collect_components_for_device(device, current_package, component_type)
+        if not components:
+            eprint("No {}s found for {}.".format(component_type, current_package))
+            continue
+
+        if isinstance(target, str) and target.lower() == "manual":
+            _print_manual_commands(device, components, component_type)
             continue
 
         if target is None:
-            for index, component in enumerate(activities, start=1):
-                print("[{}] {}".format(index, component))
+            for index, component in enumerate(components, start=1):
+                print("[{}] {}".format(index, _format_component(component, component_type)))
             continue
 
-        component = _resolve_target_component(current_package, activities, target)
+        component = _resolve_target_component(current_package, components, target, component_type)
         if component is None:
             continue
-        _start_activity(device, component)
+        _start_component(device, component, component_type)
+
+
+def list_activities(packagename=None, target=None):
+    list_components("activity", packagename, target)
+
+
+def list_services(packagename=None, target=None):
+    list_components("service", packagename, target)
+
+
+def list_receivers(packagename=None, target=None):
+    list_components("receiver", packagename, target)
+
+
+def list_providers(packagename=None, target=None):
+    list_components("provider", packagename, target)
