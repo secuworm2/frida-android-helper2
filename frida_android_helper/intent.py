@@ -78,11 +78,6 @@ def _extract_activity_components(packagename, package_dump):
         if normalized:
             components.append(normalized)
 
-    for component in _COMPONENT_PATTERN.findall(package_dump):
-        normalized = _normalize_component(packagename, component)
-        if normalized:
-            components.append(normalized)
-
     # Preserve order while removing duplicates.
     return list(dict.fromkeys(components))
 
