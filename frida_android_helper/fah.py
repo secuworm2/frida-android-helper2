@@ -10,6 +10,7 @@ from frida_android_helper.app import *
 from frida_android_helper.clip import *
 from frida_android_helper.ps import *
 from frida_android_helper.input import *
+from frida_android_helper.intent import *
 
 def main():
     arg_parser = argparse.ArgumentParser(prog="fah", description="Frida Android Helper")
@@ -53,6 +54,11 @@ def main():
 
     input_group = subparsers.add_parser("input", help="Input manipulation")
     input_group.add_argument("action", metavar="text", type=str, help="Write to input", nargs="*", default=None)
+
+    intent_group = subparsers.add_parser("intent", help="Intent helpers")
+    intent_group.add_argument("action", type=str, help="Intent helper action", nargs="?", default="activity",
+                              choices=("activity",))
+    intent_group.add_argument("packagename", type=str, help="Specify package name", nargs="?", default=None)
 
     args = arg_parser.parse_args()
     if not args.func:
@@ -110,6 +116,9 @@ def main():
     elif args.func == "input":
         if args.action[0] == "text":
             input_text(" ".join(args.action[1:]))
+    elif args.func == "intent":
+        if args.action == "activity":
+            list_activities(args.packagename)
     # print(args) # debugging purposes
 
 
