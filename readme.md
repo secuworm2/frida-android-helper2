@@ -83,6 +83,10 @@ Route traffic by performing `adb reverse` and a few iptables rules:
     - `fah app dl <filter>`: list apps by filter and download them
 - `fah app list`: list installed app on Android device.
 
+### Android intents
+- `fah intent activity`: list activities for the currently opened app
+- `fah intent activity com.example.app`: list activities for `com.example.app`
+
 
 ### Android clipboard
 - `fah clip`: display content of clipboard
