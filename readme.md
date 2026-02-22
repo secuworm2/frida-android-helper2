@@ -29,7 +29,8 @@ Commands are self explanatory. Ask for help `fah --help`.
 - Stop the frida-server `fah server stop`
 - Reboot the frida-server `fah server reboot`
 - Update the frida-server `fah server update`: The latest Android frida-server is fetched from GitHub
-release page using the GitHub API. This is then installed on the Android device using `fah server update` command.
+release page using the GitHub API and installed on the Android device using `fah server update` command.
+- Install a specific frida-server version `fah server update 17.2.1`: installs that exact version on the device.
 
 
 ### Android proxy configuration
