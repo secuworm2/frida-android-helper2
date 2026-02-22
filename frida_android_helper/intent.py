@@ -1,5 +1,6 @@
 import os
 import tempfile
+import logging
 
 from frida_android_helper.utils import *
 
@@ -10,6 +11,18 @@ except ImportError:
     from androguard.core.bytecodes.apk import APK
 
 ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
+
+
+def _silence_androguard_logs():
+    logging.getLogger("androguard").setLevel(logging.WARNING)
+    try:
+        from loguru import logger
+        logger.disable("androguard")
+    except Exception:
+        pass
+
+
+_silence_androguard_logs()
 
 
 def _normalize_activity_name(packagename, activity_name):
@@ -70,7 +83,66 @@ def _extract_activities_from_manifest(apk_path, fallback_packagename):
     return list(dict.fromkeys(activities))
 
 
-def list_activities(packagename=None):
+def _collect_activities_for_device(device, packagename):
+    apk_paths = _get_apk_paths(device, packagename)
+    if not apk_paths:
+        eprint("Failed to locate APK path for {}.".format(packagename))
+        return []
+
+    all_activities = []
+    with tempfile.TemporaryDirectory(prefix="fah_manifest_") as temp_dir:
+        for index, apk_path in enumerate(apk_paths):
+            local_apk = os.path.join(temp_dir, "apk_{}.apk".format(index))
+            try:
+                device.pull(apk_path, local_apk)
+            except Exception as err:
+                eprint("Failed to pull APK {}: {}".format(apk_path, err))
+                continue
+
+            activities = _extract_activities_from_manifest(local_apk, packagename)
+            if activities is None:
+                continue
+            all_activities.extend(activities)
+
+    return list(dict.fromkeys(all_activities))
+
+
+def _resolve_target_component(packagename, activities, target):
+    if target is None:
+        return None
+
+    if target.isdigit():
+        index = int(target)
+        if index < 1 or index > len(activities):
+            eprint("Invalid activity index: {} (valid range: 1-{})".format(index, len(activities)))
+            return None
+        return activities[index - 1]
+
+    if "/" in target:
+        if target.startswith("{}/".format(packagename)):
+            return target
+        eprint("Target component must start with '{}/'.".format(packagename))
+        return None
+
+    return _normalize_activity_name(packagename, target)
+
+
+def _start_activity(device, component):
+    eprint("Starting activity {}...".format(component))
+    output = perform_cmd(device, "am start -n {}".format(component))
+    denied_markers = (
+        "Permission Denial",
+        "not exported",
+        "java.lang.SecurityException",
+    )
+    if any(marker in output for marker in denied_markers):
+        eprint("Permission denied, retrying with root...")
+        output = perform_cmd(device, "am start -n {}".format(component), root=True)
+    if output:
+        print(output.strip())
+
+
+def list_activities(packagename=None, target=None):
     for device in get_adb_devices():
         eprint("Device: {} ({})".format(get_device_model(device), device.get_serial_no()))
         current_package = packagename or get_current_app_focus(device)
@@ -79,30 +151,17 @@ def list_activities(packagename=None):
             continue
 
         eprint("Listing activities for {}...".format(current_package))
-        apk_paths = _get_apk_paths(device, current_package)
-        if not apk_paths:
-            eprint("Failed to locate APK path for {}.".format(current_package))
-            continue
-
-        all_activities = []
-        with tempfile.TemporaryDirectory(prefix="fah_manifest_") as temp_dir:
-            for index, apk_path in enumerate(apk_paths):
-                local_apk = os.path.join(temp_dir, "apk_{}.apk".format(index))
-                try:
-                    device.pull(apk_path, local_apk)
-                except Exception as err:
-                    eprint("Failed to pull APK {}: {}".format(apk_path, err))
-                    continue
-
-                activities = _extract_activities_from_manifest(local_apk, current_package)
-                if activities is None:
-                    continue
-                all_activities.extend(activities)
-
-        activities = list(dict.fromkeys(all_activities))
+        activities = _collect_activities_for_device(device, current_package)
         if not activities:
             eprint("No activities found for {}.".format(current_package))
             continue
 
-        for index, component in enumerate(activities, start=1):
-            print("[{}] {}".format(index, component))
+        if target is None:
+            for index, component in enumerate(activities, start=1):
+                print("[{}] {}".format(index, component))
+            continue
+
+        component = _resolve_target_component(current_package, activities, target)
+        if component is None:
+            continue
+        _start_activity(device, component)

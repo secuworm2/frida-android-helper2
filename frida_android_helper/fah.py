@@ -59,6 +59,7 @@ def main():
     intent_group.add_argument("action", type=str, help="Intent helper action", nargs="?", default="activity",
                               choices=("activity",))
     intent_group.add_argument("packagename", type=str, help="Specify package name", nargs="?", default=None)
+    intent_group.add_argument("target", type=str, help="Activity index or name", nargs="?", default=None)
 
     args = arg_parser.parse_args()
     if not args.func:
@@ -118,7 +119,7 @@ def main():
             input_text(" ".join(args.action[1:]))
     elif args.func == "intent":
         if args.action == "activity":
-            list_activities(args.packagename)
+            list_activities(args.packagename, args.target)
     # print(args) # debugging purposes
 
 
