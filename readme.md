@@ -14,7 +14,7 @@ It uses `pure-python-adb` to interface with the ADB server.
 
 
 ## Installation
-1. Clone the repository: `git clone https://github.com/Hamz-a/frida-android-helper`
+1. Clone the repository: `git clone https://github.com/secuworm2/frida-android-helper2`
 2. Install with pip: `python -m pip install .`
 3. (Optional) Editable install for development: `python -m pip install -e .`
 
