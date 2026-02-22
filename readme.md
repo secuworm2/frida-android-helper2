@@ -11,7 +11,6 @@ It uses `pure-python-adb` to interface with the ADB server.
 - Python 3
 - ADB
 - Rooted Android phone
-- AAPT (for `fah intent activity`)
 
 
 ## Installation
