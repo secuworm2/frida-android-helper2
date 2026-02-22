@@ -86,6 +86,7 @@ Route traffic by performing `adb reverse` and a few iptables rules:
 ### Android intents
 - `fah intent activity`: list activities for the currently opened app
 - `fah intent activity com.example.app`: list activities for `com.example.app`
+- `fah intent activity com.example.app 7`: start the listed activity at index `7`
 
 
 ### Android clipboard
