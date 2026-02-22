@@ -1,97 +1,88 @@
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 
 from frida_android_helper.utils import *
 
-_COMPONENT_PATTERN = re.compile(r"([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)")
-_ACTIVITY_OBJECT_PATTERN = re.compile(r"(?:Activity|ActivityAlias)\{[^}]*\s([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)\}")
-_CLASS_HEADER_PATTERN = re.compile(r"^([A-Za-z0-9_.$]+):$")
-_CLASS_ASSIGNMENT_PATTERN = re.compile(r"(?:Class=|name=)([A-Za-z0-9_.$]+)")
-_SECTION_HEADER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9 ]+:$")
+_MANIFEST_NAME_PATTERN = re.compile(r'A: android:name(?:\([^)]*\))?="([^"]+)"')
 
 
-def _normalize_component(packagename, component):
-    if "/" in component:
-        component_pkg, component_name = component.split("/", 1)
-        if component_pkg != packagename:
-            return None
-        if component_name.startswith("."):
-            component_name = "{}{}".format(packagename, component_name)
-        return "{}/{}".format(packagename, component_name)
+def _normalize_activity_name(packagename, activity_name):
+    if activity_name.startswith("."):
+        fqcn = "{}{}".format(packagename, activity_name)
+    elif "." in activity_name:
+        fqcn = activity_name
+    else:
+        fqcn = "{}.{}".format(packagename, activity_name)
+    return "{}/{}".format(packagename, fqcn)
 
-    if component.startswith("."):
-        component = "{}{}".format(packagename, component)
-    if not component.startswith("{}.".format(packagename)):
+
+def _get_base_apk_path(device, packagename):
+    result = perform_cmd(device, "pm path {}".format(packagename))
+    paths = []
+    for line in result.splitlines():
+        line = line.strip()
+        if line.startswith("package:"):
+            paths.append(line[len("package:"):])
+
+    if not paths:
         return None
-    return "{}/{}".format(packagename, component)
+
+    for path in paths:
+        if path.endswith("/base.apk"):
+            return path
+    return paths[0]
 
 
-def _extract_activity_components(packagename, package_dump):
-    components = []
-    in_activity_resolver = False
-    in_activities = False
-    activities_indent = None
-    activity_resolver_indent = None
+def _extract_activities_from_manifest(apk_path, packagename):
+    aapt_path = shutil.which("aapt")
+    if not aapt_path:
+        eprint("aapt not found in PATH. Install Android build-tools or add aapt to PATH.")
+        return None
 
-    for raw_line in package_dump.splitlines():
+    try:
+        output = subprocess.run(
+            [aapt_path, "dump", "xmltree", apk_path, "AndroidManifest.xml"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            check=False,
+        )
+    except Exception as err:
+        eprint("Failed to run aapt: {}".format(err))
+        return None
+
+    if output.returncode != 0:
+        eprint("aapt failed: {}".format(output.stderr.strip()))
+        return None
+
+    activities = []
+    in_activity = False
+    activity_indent = 0
+
+    for raw_line in output.stdout.splitlines():
         indent = len(raw_line) - len(raw_line.lstrip())
         line = raw_line.strip()
 
-        if line.lower() == "activities:":
-            in_activities = True
-            activities_indent = indent
-            in_activity_resolver = False
-            activity_resolver_indent = None
+        if line.startswith("E: activity ") or line.startswith("E: activity-alias "):
+            in_activity = True
+            activity_indent = indent
             continue
 
-        if in_activities and _SECTION_HEADER_PATTERN.match(line) and indent <= activities_indent:
-            if line.lower() != "activities:":
-                in_activities = False
-                activities_indent = None
-                in_activity_resolver = False
-                activity_resolver_indent = None
+        if in_activity and line.startswith("E: ") and indent <= activity_indent:
+            in_activity = False
 
-        if in_activities and line == "Activity Resolver Table:":
-            in_activity_resolver = True
-            activity_resolver_indent = indent
+        if not in_activity:
             continue
 
-        if in_activity_resolver and line.endswith("Resolver Table:") and line != "Activity Resolver Table:":
-            if activity_resolver_indent is None or indent <= activity_resolver_indent:
-                in_activity_resolver = False
-                activity_resolver_indent = None
+        match = _MANIFEST_NAME_PATTERN.search(line)
+        if match:
+            activities.append(_normalize_activity_name(packagename, match.group(1)))
 
-        if in_activity_resolver:
-            for component in _COMPONENT_PATTERN.findall(line):
-                normalized = _normalize_component(packagename, component)
-                if normalized:
-                    components.append(normalized)
-
-        if in_activities:
-            for component in _COMPONENT_PATTERN.findall(line):
-                normalized = _normalize_component(packagename, component)
-                if normalized:
-                    components.append(normalized)
-
-            class_header_match = _CLASS_HEADER_PATTERN.match(line)
-            if class_header_match:
-                normalized = _normalize_component(packagename, class_header_match.group(1))
-                if normalized:
-                    components.append(normalized)
-
-            for class_name in _CLASS_ASSIGNMENT_PATTERN.findall(line):
-                normalized = _normalize_component(packagename, class_name)
-                if normalized:
-                    components.append(normalized)
-
-    # Package dump commonly contains full activity declarations as Activity{... pkg/.Class}.
-    # Parse these globally so we do not miss non-exported activities.
-    for component in _ACTIVITY_OBJECT_PATTERN.findall(package_dump):
-        normalized = _normalize_component(packagename, component)
-        if normalized:
-            components.append(normalized)
-
-    # Preserve order while removing duplicates.
-    return list(dict.fromkeys(components))
+    return list(dict.fromkeys(activities))
 
 
 def list_activities(packagename=None):
@@ -103,12 +94,23 @@ def list_activities(packagename=None):
             continue
 
         eprint("Listing activities for {}...".format(current_package))
-        package_dump = perform_cmd(device, "dumpsys package {}".format(current_package))
-        if not package_dump:
-            eprint("Failed to query package dump for {}.".format(current_package))
+        apk_path = _get_base_apk_path(device, current_package)
+        if apk_path is None:
+            eprint("Failed to locate APK path for {}.".format(current_package))
             continue
 
-        activities = _extract_activity_components(current_package, package_dump)
+        with tempfile.TemporaryDirectory(prefix="fah_manifest_") as temp_dir:
+            local_apk = os.path.join(temp_dir, "base.apk")
+            try:
+                device.pull(apk_path, local_apk)
+            except Exception as err:
+                eprint("Failed to pull APK {}: {}".format(apk_path, err))
+                continue
+
+            activities = _extract_activities_from_manifest(local_apk, current_package)
+
+        if activities is None:
+            continue
         if not activities:
             eprint("No activities found for {}.".format(current_package))
             continue
