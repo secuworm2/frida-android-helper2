@@ -11,6 +11,7 @@ from frida_android_helper.clip import *
 from frida_android_helper.input import *
 from frida_android_helper.intent import *
 from frida_android_helper.netcap import *
+from frida_android_helper.dexdump import *
 
 def main():
     arg_parser = argparse.ArgumentParser(
@@ -204,6 +205,43 @@ def main():
         help="Optional package name for start action (captures only that app's UID traffic).",
     )
 
+    dexdump_group = subparsers.add_parser(
+        "dexdump",
+        help="Dump runtime-loaded dex and collect to host",
+        description="Hook ART DefineClass, dump runtime dex payloads, pull them to host, then optionally clean device artifacts.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah dexdump com.example.app\n"
+            "  fah dexdump com.example.app --duration 45\n"
+            "  fah dexdump com.example.app --attach\n"
+            "  fah dexdump com.example.app --keep-device-files"
+        ),
+    )
+    dexdump_group.add_argument(
+        "packagename",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Target package name (optional: uses currently focused app).",
+    )
+    dexdump_group.add_argument(
+        "--duration",
+        type=int,
+        default=20,
+        help="Seconds to keep hooks attached while app loads code (default: 20).",
+    )
+    dexdump_group.add_argument(
+        "--attach",
+        action="store_true",
+        help="Attach to an already running app instead of spawn.",
+    )
+    dexdump_group.add_argument(
+        "--keep-device-files",
+        action="store_true",
+        help="Do not delete /data/data/<pkg>/files/dump_dex_<pkg> and /sdcard staging folder.",
+    )
+
     args = arg_parser.parse_args()
     if not args.func:
         arg_parser.print_help()
@@ -277,6 +315,13 @@ def main():
             start_netcap(args.target)
         elif args.action == "stop":
             stop_netcap()
+    elif args.func == "dexdump":
+        run_dexdump(
+            packagename=args.packagename,
+            duration=args.duration,
+            attach=args.attach,
+            cleanup=not args.keep_device_files,
+        )
     # print(args) # debugging purposes
 
 
