@@ -15,8 +15,8 @@ It uses `pure-python-adb` to interface with the ADB server.
 
 ## Installation
 1. Clone the repository: `git clone https://github.com/secuworm2/frida-android-helper2`
-2. Install with pip: `python -m pip install .`
-3. (Optional) Editable install for development: `python -m pip install -e .`
+2. Install with pip: `python -m pip install . --no-cache-dir`
+3. (Optional) Editable install for development: `python -m pip install -e . --no-cache-dir`
 
 
 ## Usage
@@ -116,6 +116,11 @@ Component commands:
 | `receiver` | `fah intent receiver com.example.app` | `fah intent receiver com.example.app 2` | `fah intent receiver com.example.app manual` |
 | `provider` | `fah intent provider com.example.app` | `fah intent provider com.example.app 1` | `fah intent provider com.example.app manual` |
 
+Notes:
+- Receiver actions are parsed from each manifest `intent-filter` and shown in list output.
+- Receiver `manual` output prints one `am broadcast` command per discovered action.
+- If no manifest action exists for a receiver, FAH falls back to `-a fah.intent.TEST`.
+
 ### Android network capture
 | Command | Description |
 | --- | --- |
@@ -133,6 +138,20 @@ Requirements:
 | `fah clip` | Show Android clipboard content. |
 | `fah clip copy` | Same as `fah clip`. |
 | `fah clip paste foo bar` | Set clipboard text to `foo bar`. |
+
+### Runtime dex dump
+ART `DefineClass` hook + auto collection + device cleanup.
+Reference: inspired by [frida_dump](https://github.com/lasting-yang/frida_dump).
+
+| Command | Description |
+| --- | --- |
+| `fah dexdump com.example.app` | Spawn app, hook ART DefineClass, dump payloads, pull to host, cleanup device files. |
+| `fah dexdump com.example.app --duration 45` | Same, but keep hooks attached for 45 seconds. |
+| `fah dexdump com.example.app --attach` | Attach to a running process instead of spawn. |
+| `fah dexdump com.example.app --keep-device-files` | Pull to host but keep dump artifacts on device. |
+
+Host output path:
+- `./fah_dexdump/<deviceSerial>/<package>_<timestamp>/`
 
 ## Ideas & bugs
 Ideas and bug reports are welcome! 
