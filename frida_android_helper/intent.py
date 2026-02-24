@@ -19,6 +19,41 @@ COMPONENT_TAGS = {
 }
 
 
+def _strip_xml_namespace(tag):
+    if not isinstance(tag, str):
+        return None
+    if "}" in tag:
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def _merge_actions(existing_actions, new_actions):
+    merged = []
+    seen = set()
+    for action in (existing_actions or []) + (new_actions or []):
+        if not action or action in seen:
+            continue
+        seen.add(action)
+        merged.append(action)
+    return merged
+
+
+def _extract_receiver_actions(receiver_node):
+    actions = []
+    for child in receiver_node:
+        child_tag = _strip_xml_namespace(child.tag)
+        if child_tag != "intent-filter":
+            continue
+        for filter_item in child:
+            filter_tag = _strip_xml_namespace(filter_item.tag)
+            if filter_tag != "action":
+                continue
+            action_name = filter_item.get("{}name".format(ANDROID_NS)) or filter_item.get("name")
+            if action_name:
+                actions.append(action_name)
+    return _merge_actions([], actions)
+
+
 def _silence_androguard_logs():
     logging.getLogger("androguard").setLevel(logging.WARNING)
     try:
@@ -74,15 +109,10 @@ def _extract_components_from_manifest(apk_path, fallback_packagename, component_
 
     package_name = apk.get_package() or fallback_packagename
     components = []
-    seen = set()
+    seen_entries = {}
 
     for node in manifest.iter():
-        tag = node.tag
-        if not isinstance(tag, str):
-            continue
-
-        if "}" in tag:
-            tag = tag.split("}", 1)[1]
+        tag = _strip_xml_namespace(node.tag)
         if tag not in tags:
             continue
 
@@ -93,35 +123,46 @@ def _extract_components_from_manifest(apk_path, fallback_packagename, component_
         normalized_component = _normalize_component_name(package_name, component_name)
         if component_type != "provider":
             key = (normalized_component, None)
-            if key not in seen:
-                seen.add(key)
-                components.append({
-                    "component": normalized_component,
-                    "authority": None,
-                })
+            receiver_actions = _extract_receiver_actions(node) if component_type == "receiver" else []
+            existing_entry = seen_entries.get(key)
+            if existing_entry is not None:
+                if component_type == "receiver":
+                    existing_entry["actions"] = _merge_actions(existing_entry.get("actions"), receiver_actions)
+                continue
+            entry = {
+                "component": normalized_component,
+                "authority": None,
+                "actions": receiver_actions,
+            }
+            components.append(entry)
+            seen_entries[key] = entry
             continue
 
         authorities_value = node.get("{}authorities".format(ANDROID_NS)) or node.get("authorities") or ""
         authorities = [a.strip() for a in authorities_value.split(";") if a.strip()]
         if not authorities:
             key = (normalized_component, None)
-            if key not in seen:
-                seen.add(key)
-                components.append({
+            if key not in seen_entries:
+                entry = {
                     "component": normalized_component,
                     "authority": None,
-                })
+                    "actions": [],
+                }
+                components.append(entry)
+                seen_entries[key] = entry
             continue
 
         for authority in authorities:
             key = (normalized_component, authority)
-            if key in seen:
+            if key in seen_entries:
                 continue
-            seen.add(key)
-            components.append({
+            entry = {
                 "component": normalized_component,
                 "authority": authority,
-            })
+                "actions": [],
+            }
+            components.append(entry)
+            seen_entries[key] = entry
 
     return components
 
@@ -148,13 +189,20 @@ def _collect_components_for_device(device, packagename, component_type):
             all_components.extend(components)
 
     deduped = []
-    seen = set()
+    deduped_by_key = {}
     for component in all_components:
         key = (component.get("component"), component.get("authority"))
-        if key in seen:
+        existing_entry = deduped_by_key.get(key)
+        if existing_entry is not None:
+            existing_entry["actions"] = _merge_actions(existing_entry.get("actions"), component.get("actions"))
             continue
-        seen.add(key)
-        deduped.append(component)
+        entry = {
+            "component": component.get("component"),
+            "authority": component.get("authority"),
+            "actions": _merge_actions([], component.get("actions")),
+        }
+        deduped_by_key[key] = entry
+        deduped.append(entry)
     return deduped
 
 
@@ -187,6 +235,7 @@ def _resolve_target_component(packagename, components, target, component_type):
             return {
                 "component": normalized_target,
                 "authority": None,
+                "actions": [],
             }
         eprint("Target component must start with '{}/'.".format(packagename))
         return None
@@ -199,6 +248,7 @@ def _resolve_target_component(packagename, components, target, component_type):
     return {
         "component": normalized_target,
         "authority": None,
+        "actions": [],
     }
 
 
@@ -209,40 +259,50 @@ def _format_component(entry, component_type):
         if authority:
             return "{} (authority={})".format(component, authority)
         return "{} (authority=<none>)".format(component)
+    if component_type == "receiver":
+        actions = entry.get("actions") or []
+        if actions:
+            return "{} (actions={})".format(component, ", ".join(actions))
+        return "{} (actions=<none>)".format(component)
     return component
 
 
 def _build_manual_commands(entry, component_type):
     component = entry.get("component")
     authority = entry.get("authority")
+    actions = entry.get("actions") or []
 
     if component_type == "activity":
-        return "am start -n {}".format(component)
+        return ["am start -n {}".format(component)]
     if component_type == "service":
-        return "am startservice -n {}".format(component)
+        return ["am startservice -n {}".format(component)]
     if component_type == "receiver":
-        return "am broadcast -n {} -a fah.intent.TEST".format(component)
+        if not actions:
+            return ["am broadcast -n {} -a fah.intent.TEST".format(component)]
+        return ["am broadcast -n {} -a {}".format(component, action) for action in actions]
     if component_type == "provider":
         if not authority:
-            return None
-        return "content query --uri content://{}".format(authority)
-    return None
+            return []
+        return ["content query --uri content://{}".format(authority)]
+    return []
 
 
 def _print_manual_commands(device, components, component_type):
     serial_no = device.get_serial_no()
     eprint("Manual commands for {} on device {} (run inside adb shell):".format(component_type, serial_no))
     for entry in components:
-        cmd = _build_manual_commands(entry, component_type)
-        if not cmd:
+        commands = _build_manual_commands(entry, component_type)
+        if not commands:
             eprint("Skipping {} (authority missing)".format(_format_component(entry, component_type)))
             continue
-        print(cmd)
+        for cmd in commands:
+            print(cmd)
 
 
 def _start_component(device, entry, component_type):
     component = entry.get("component")
     authority = entry.get("authority")
+    actions = entry.get("actions") or []
     if component_type == "activity":
         eprint("Starting activity {}...".format(component))
         cmd = "am start -n {}".format(component)
@@ -250,8 +310,15 @@ def _start_component(device, entry, component_type):
         eprint("Starting service {}...".format(component))
         cmd = "am startservice -n {}".format(component)
     elif component_type == "receiver":
-        eprint("Broadcasting receiver {}...".format(component))
-        cmd = "am broadcast -n {} -a fah.intent.TEST".format(component)
+        if actions:
+            action = actions[0]
+            if len(actions) > 1:
+                eprint("Receiver has {} actions, using first one: {}".format(len(actions), action))
+            eprint("Broadcasting receiver {} with action {}...".format(component, action))
+            cmd = "am broadcast -n {} -a {}".format(component, action)
+        else:
+            eprint("No manifest action found, using fallback action fah.intent.TEST for {}...".format(component))
+            cmd = "am broadcast -n {} -a fah.intent.TEST".format(component)
     elif component_type == "provider":
         if not authority:
             eprint("Provider '{}' has no authority, cannot query it directly.".format(component))
