@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 
+from frida_android_helper.apk_merge import ApkMergeError, merge_split_apks
 from frida_android_helper.utils import *
 import frida
 
@@ -26,21 +27,22 @@ def _resolve_launcher_component(device, packagename):
     return None
 
 
-def download_app(packagename=None):
+def download_app(packagename=None, single=False):
     eprint("Downloading app...")
+    package_filter = packagename
     for device in get_adb_devices():
         eprint("Device: {} ({})".format(get_device_model(device), device.get_serial_no()))
-        if packagename is None:
-            packagename = get_current_app_focus(device)
-            if packagename is None:
+        if package_filter is None:
+            focused_package = get_current_app_focus(device)
+            if focused_package is None:
                 eprint("No app is open, specify package name.")
                 continue
-            packagenames = [packagename]
+            packagenames = [focused_package]
         else:
-            packagenames = list_apps_for_device(device, packagename)
+            packagenames = list_apps_for_device(device, package_filter)
 
         if not packagenames:
-            eprint("No package with filter '{}' was found".format(packagename))
+            eprint("No package with filter '{}' was found".format(package_filter))
 
         for target in packagenames:
             eprint("Querying path info for {}...".format(target))
@@ -55,10 +57,28 @@ def download_app(packagename=None):
             eprint("Creating directory {}...".format(folder))
             os.mkdir(folder)
 
+            downloaded_packages = []
             for package_path in packages:
                 save_package = "{}/{}".format(folder, os.path.basename(package_path))
                 eprint("Downloading from {} to {}...".format(package_path, save_package))
                 device.pull(package_path, save_package)
+                downloaded_packages.append(save_package)
+
+            if single:
+                merged_dir = os.path.join(folder, "merged")
+                os.makedirs(merged_dir, exist_ok=True)
+                try:
+                    merged_apk = merge_split_apks(downloaded_packages, target, merged_dir)
+                except ApkMergeError as err:
+                    if not os.listdir(merged_dir):
+                        os.rmdir(merged_dir)
+                    eprint("Failed to merge split APKs for {}: {}".format(target, err))
+                    continue
+
+                if merged_apk:
+                    eprint("Merged APK created at {}.".format(merged_apk))
+                elif not os.listdir(merged_dir):
+                    os.rmdir(merged_dir)
 
 
 def list_apps(filter=None):
