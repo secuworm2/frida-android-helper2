@@ -92,6 +92,8 @@ Recommended flow:
 | `fah app` | Download the currently focused app APK(s). |
 | `fah app dl` | Same as `fah app`. |
 | `fah app dl <filter>` | Find packages by filter and download APK(s). |
+| `fah app dl --single` | If the target is split APKs, rebuild them into one signed APK. |
+| `fah app dl <filter> --single` | Same as above, but for packages matched by filter. |
 | `fah app list` | List installed apps in `name (package) [pid]` format. |
 | `fah app list <filter>` | Filter app list by app name or package. |
 | `fah app start <pkg>` | Start app launcher activity. |

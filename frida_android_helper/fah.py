@@ -61,8 +61,10 @@ def main():
         epilog=(
             "Examples:\n"
             "  fah app dl\n"
-            "  fah app dl sshdroid\n"
-            "  fah app list hana\n"
+            "  fah app dl --single\n"
+            "  fah app dl com.example.app\n"
+            "  fah app dl com.example.app --single\n"
+            "  fah app list example\n"
             "  fah app start com.example.app\n"
             "  fah app stop com.example.app\n"
             "  fah app clear com.example.app"
@@ -85,6 +87,11 @@ def main():
             "  list    : app name/package filter (optional)\n"
             "  start/stop/clear : package name (recommended)"
         ),
+    )
+    app_group.add_argument(
+        "--single",
+        action="store_true",
+        help="For `app dl` only: merge split APK downloads into one signed APK when possible.",
     )
 
     clip_group = subparsers.add_parser("clip", help="Manage Android's clipboard")
@@ -282,7 +289,10 @@ def main():
             "stop": stop_app,
             "clear": clear_app,
         }
-        app_route.get(args.action, download_app)(args.target)
+        if args.action == "dl":
+            download_app(args.target, single=args.single)
+        else:
+            app_route.get(args.action, download_app)(args.target)
     elif args.func == "clip":
         if args.action[0] == "copy":
             copy_from_clipboard()
