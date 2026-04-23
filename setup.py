@@ -7,7 +7,7 @@ with open("requirements.txt", encoding="utf-8") as f:
 setup(
     name="frida-android-helper",
     description="Handy Android frida helping tools at the tip of your terminal",
-    version="0.8",
+    version="0.81",
     packages=["frida_android_helper"],
     package_data={"frida_android_helper": ["frida_hooks/*.js", "scripts/*", "tools/*"]},
     install_requires=requirements,
