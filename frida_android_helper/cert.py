@@ -11,6 +11,7 @@ import shutil
 import appdirs
 import os
 import subprocess
+import tempfile
 
 PATH_CACHE_CA_DER = os.path.join(appdirs.user_data_dir("fah"), "fah_ca.der")
 PATH_CACHE_SERVER_KEY_DER = os.path.join(appdirs.user_data_dir("fah"), "fah_server_private_key.der")
@@ -273,16 +274,18 @@ def install_certificate(certificate=None, show_section=True, show_guidance=True)
         if get_android_version(device) >= 14:
             path_cacerts = "/apex/com.android.conscrypt/cacerts"
 
-            script = resources.files("frida_android_helper").joinpath("scripts", "android14_apex.sh")
-            with resources.as_file(script) as script_path:
-                device.push(str(script_path), "/data/local/tmp/android14_apex.sh")
+            script_bytes = resources.files("frida_android_helper").joinpath("scripts", "android14_apex.sh").read_bytes()
+            script_bytes = script_bytes.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+            with tempfile.NamedTemporaryFile(mode="wb", suffix=".sh", delete=False) as tmp:
+                tmp.write(script_bytes)
+                tmp_path = tmp.name
+            try:
+                device.push(tmp_path, "/data/local/tmp/android14_apex.sh")
+            finally:
+                os.unlink(tmp_path)
 
-            err = perform_cmd(device, "chmod +x /data/local/tmp/android14_apex.sh", root=True)
+            err = perform_cmd(device, "sh /data/local/tmp/android14_apex.sh", root=True)
             if err:
-                _emit_error("[{}] {}".format(device_name, err))
-                continue
-            err = perform_cmd(device, "/data/local/tmp/android14_apex.sh", root=True)
-            if err and "Device or resource busy" not in err:  # known error to ignore for now
                 _emit_error("[{}] {}".format(device_name, err))
                 continue
         else:
@@ -319,6 +322,9 @@ def install_certificate(certificate=None, show_section=True, show_guidance=True)
         if err:
             _emit_error("[{}] {}".format(device_name, err))
             continue
+
+        if get_android_version(device) >= 14:
+            perform_cmd(device, "chcon u:object_r:system_file:s0 {}/{}.{}".format(path_cacerts, x509_old_hash, offset), root=True)
 
         installed_devices.append(device_name)
         if get_android_version(device) >= 14:
