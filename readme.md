@@ -162,5 +162,14 @@ Reference: inspired by [frida_dump](https://github.com/lasting-yang/frida_dump).
 Host output path:
 - `./fah_dexdump/<deviceSerial>/<package>_<timestamp>/`
 
+### Loaded native libraries
+Lists `.so` libraries currently mapped into a running app's process (from `/proc/<pid>/maps`), and can extract one to the host. Detects libraries that were unlinked from disk after loading (a common anti-tamper trick) and recovers them from process memory via `/proc/<pid>/map_files/`.
+
+| Command | Description |
+| --- | --- |
+| `fah native com.example.app` | List native libraries loaded by the app (grouped as app-provided vs system/framework, flags self-erased libraries). |
+| `fah native` | Same, using the currently focused app. |
+| `fah native com.example.app dl libfoo.so` | Extract `libfoo.so` from the running process to the current directory. |
+
 ## Ideas & bugs
 Ideas and bug reports are welcome! 

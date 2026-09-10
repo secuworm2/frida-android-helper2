@@ -12,6 +12,7 @@ from frida_android_helper.input import *
 from frida_android_helper.intent import *
 from frida_android_helper.netcap import *
 from frida_android_helper.dexdump import *
+from frida_android_helper.native import *
 
 def main():
     arg_parser = argparse.ArgumentParser(
@@ -286,6 +287,40 @@ def main():
         help="Do not delete /data/data/<pkg>/files/dump_dex_<pkg> and /sdcard staging folder.",
     )
 
+    native_group = subparsers.add_parser(
+        "native",
+        help="Inspect native libraries loaded by a running app",
+        description="List native (.so) libraries currently mapped into a running app's process, and optionally extract one to the current directory.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah native com.example.app\n"
+            "  fah native com.example.app dl libfoo.so"
+        ),
+    )
+    native_group.add_argument(
+        "packagename",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Target package name (optional: uses currently focused app).",
+    )
+    native_group.add_argument(
+        "action",
+        type=str,
+        nargs="?",
+        default=None,
+        choices=("dl",),
+        help="dl: extract a loaded library file to the current directory.",
+    )
+    native_group.add_argument(
+        "target",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Library filename to extract (required with dl).",
+    )
+
     args = arg_parser.parse_args()
     if not args.func:
         arg_parser.print_help()
@@ -376,6 +411,14 @@ def main():
             attach=args.attach,
             cleanup=not args.keep_device_files,
         )
+    elif args.func == "native":
+        if args.action == "dl":
+            if not args.target:
+                native_group.print_help()
+            else:
+                download_native_lib(args.packagename, args.target)
+        else:
+            list_native_libs(args.packagename)
     # print(args) # debugging purposes
 
 
