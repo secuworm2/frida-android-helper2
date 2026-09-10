@@ -292,7 +292,9 @@ def clear_pengrida_art_gadget(packagename: str, reboot_timeout: int = 180):
         pid = perform_cmd(device, "pidof {}".format(packagename)).strip()
         eprint("{} pid after reboot: {}".format(packagename, pid if pid else "(not running)"))
 
-        leftover = perform_cmd(device, "logcat -d | grep -i ZygiskGadget", root=True).strip()
+        logcat_output = perform_cmd(device, "logcat -d -s ZygiskGadget:V", root=True)
+        leftover_lines = [line for line in logcat_output.splitlines() if not line.startswith("--------- beginning of")]
+        leftover = "\n".join(leftover_lines).strip()
         if leftover:
             eprint("WARNING: ZygiskGadget still present in logcat — restore may be incomplete:\n{}".format(leftover))
         else:
