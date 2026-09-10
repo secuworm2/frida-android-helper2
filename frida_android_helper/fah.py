@@ -2,12 +2,12 @@ import argparse
 
 from frida_android_helper.screen import *
 from frida_android_helper.server import *
+from frida_android_helper.pengrida import *
 from frida_android_helper.proxy import *
 from frida_android_helper.rproxy import *
 from frida_android_helper.snap import *
 from frida_android_helper.cert import *
 from frida_android_helper.app import *
-from frida_android_helper.clip import *
 from frida_android_helper.input import *
 from frida_android_helper.intent import *
 from frida_android_helper.netcap import *
@@ -23,7 +23,8 @@ def main():
             "  fah app start com.example.app\n"
             "  fah app clear com.example.app\n"
             "  fah intent activity com.example.app manual\n"
-            "  fah server update 17.2.1"
+            "  fah server update 17.2.1\n"
+            "  fah pengrida update 17.18.0"
         ),
     )
     subparsers = arg_parser.add_subparsers(dest="func", title="commands", metavar="command")
@@ -32,6 +33,47 @@ def main():
     server_group.add_argument("action", type=str, help="Frida server on Android", nargs="?",
                               choices=("start", "stop", "reboot", "update"))
     server_group.add_argument("version", type=str, help="Frida version used by update (e.g. 17.2.1)", nargs="?")
+
+    pengrida_group = subparsers.add_parser(
+        "pengrida",
+        help="Manage Pengrida server (anti-detection frida-server fork)",
+        description="Manage the pengrida-server binary and inject the ART anti-detection gadget into a target app.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fah pengrida start\n"
+            "  fah pengrida update 17.18.0\n"
+            "  fah pengrida gadget_art update com.example.app\n"
+            "  fah pengrida gadget_art update com.example.app 17.18.0\n"
+            "  fah pengrida gadget_art clear com.example.app"
+        ),
+    )
+    pengrida_subparsers = pengrida_group.add_subparsers(dest="pengrida_action", title="pengrida commands", metavar="pengrida_command")
+
+    pengrida_subparsers.add_parser("start", help="Start pengrida-server on device")
+    pengrida_subparsers.add_parser("stop", help="Stop pengrida-server on device")
+    pengrida_subparsers.add_parser("reboot", help="Reboot pengrida-server on device")
+
+    pengrida_update = pengrida_subparsers.add_parser("update", help="Install pengrida-server from GitHub")
+    pengrida_update.add_argument("version", type=str, help="Pengrida version used by update (e.g. 17.18.0)", nargs="?")
+
+    pengrida_gadget_art = pengrida_subparsers.add_parser(
+        "gadget_art",
+        help="Inject the ART-patched Frida gadget into a target app (zygisk_gadget)",
+    )
+    pengrida_gadget_art_subparsers = pengrida_gadget_art.add_subparsers(dest="gadget_art_action", title="gadget_art commands", metavar="gadget_art_command")
+    pengrida_gadget_art_update = pengrida_gadget_art_subparsers.add_parser(
+        "update",
+        help="Download the ART gadget, register it with zygisk_gadget for a package, and relaunch the app",
+    )
+    pengrida_gadget_art_update.add_argument("packagename", type=str, help="Target package name")
+    pengrida_gadget_art_update.add_argument("version", type=str, help="Pengrida version used (e.g. 17.18.0)", nargs="?")
+
+    pengrida_gadget_art_clear = pengrida_gadget_art_subparsers.add_parser(
+        "clear",
+        help="Disable zygisk_gadget, remove the gadget files from the app's data dir, and reboot the device",
+    )
+    pengrida_gadget_art_clear.add_argument("packagename", type=str, help="Target package name")
 
     proxy_group = subparsers.add_parser("proxy", help="Configure Android proxy")
     proxy_group.add_argument("action", metavar="enable", type=str, help="Enable Android proxy", nargs="*", default=["set"])
@@ -49,9 +91,8 @@ def main():
     snap_group.add_argument("action", metavar="packagename", type=str, help="Specify packagename", nargs="?", default=None)
 
     cert_group = subparsers.add_parser("cert", help="Certificate creation & installation for mitm purposes")
-    cert_group.add_argument("action", metavar="generate", type=str, help="Generate certificate", nargs="*", default=["generate"])
-    cert_group.add_argument("install", type=str, help="Install a certificate", nargs="?")
-    cert_group.add_argument("setup", type=str, help="Generate & install certificate", nargs="?")
+    cert_group.add_argument("action", metavar="setup", type=str, help="Generate & install certificate", nargs="?",
+                             default="setup", choices=("setup",))
 
     app_group = subparsers.add_parser(
         "app",
@@ -93,10 +134,6 @@ def main():
         action="store_true",
         help="For `app dl` only: merge split APK downloads into one signed APK when possible.",
     )
-
-    clip_group = subparsers.add_parser("clip", help="Manage Android's clipboard")
-    clip_group.add_argument("action", metavar="copy", type=str, help="Copy from Android's clipboard", nargs="*", default=["copy"])
-    clip_group.add_argument("paste", type=str, help="Paste to Android's clipboard", nargs="?")
 
     input_group = subparsers.add_parser("input", help="Input manipulation")
     input_group.add_argument("action", metavar="text", type=str, help="Write to input", nargs="*", default=None)
@@ -263,6 +300,25 @@ def main():
                 "reboot": reboot_server,
             }
             server_route.get(args.action, start_server)()
+    elif args.func == "pengrida":
+        if not args.pengrida_action:
+            pengrida_group.print_help()
+        elif args.pengrida_action == "update":
+            update_pengrida_server(args.version)
+        elif args.pengrida_action == "gadget_art":
+            if args.gadget_art_action == "update":
+                update_pengrida_art_gadget(args.packagename, args.version)
+            elif args.gadget_art_action == "clear":
+                clear_pengrida_art_gadget(args.packagename)
+            else:
+                pengrida_gadget_art.print_help()
+        else:
+            pengrida_route = {
+                "start": start_pengrida_server,
+                "stop": stop_pengrida_server,
+                "reboot": reboot_pengrida_server,
+            }
+            pengrida_route.get(args.pengrida_action, start_pengrida_server)()
     elif args.func == "proxy":
         proxy_route = {
             "enable": enable_proxy,
@@ -275,12 +331,7 @@ def main():
     elif args.func == "snap":
         take_snapshot(args.action)
     elif args.func == "cert":
-        cert_route = {
-            "generate": generate_certificate,
-            "install": install_certificate,
-            "setup": setup_certificate,
-        }
-        cert_route.get(args.action[0], generate_certificate)(*args.action[1:2])
+        setup_certificate()
     elif args.func == "app":
         app_route = {
             "dl": download_app,
@@ -293,13 +344,6 @@ def main():
             download_app(args.target, single=args.single)
         else:
             app_route.get(args.action, download_app)(args.target)
-    elif args.func == "clip":
-        if args.action[0] == "copy":
-            copy_from_clipboard()
-        elif args.action[0] == "paste":
-            paste_to_clipboard(" ".join(args.action[1:]))
-        else:
-            paste_to_clipboard(" ".join(args.action))
     elif args.func == "rproxy":
         rproxy_route = {
             "enable": enable_rproxy,

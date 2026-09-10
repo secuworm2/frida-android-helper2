@@ -35,6 +35,22 @@ Commands are self explanatory. Ask for help `fah --help`.
 | `fah server update 17.2.1` | Install a specific frida-server version. |
 
 
+### Pengrida-server management
+
+[Pengrida](https://github.com/secuworm2/Pengrida) is a frida-server fork built to evade Frida string detection. It is installed as `pengrida-server`, separate from `frida-server`, so both can coexist on device.
+
+| Command | Description |
+| --- | --- |
+| `fah pengrida start` | Start pengrida-server on device. |
+| `fah pengrida stop` | Stop pengrida-server on device. |
+| `fah pengrida reboot` | Reboot pengrida-server on device. |
+| `fah pengrida update` | Install the latest pengrida-server release from GitHub. |
+| `fah pengrida update 17.18.0` | Install a specific pengrida-server version. |
+| `fah pengrida gadget_art update <packagename>` | Download the ART-patched gadget, register it in the `zygisk_gadget` module for the package, and place its per-app config. If the module is currently disabled (`disable` marker present), it removes the marker and **reboots the device** first to re-enable it. Requires the `zygisk_gadget` Magisk module and its `zygisk-gadget` CLI already installed at `/data/local/tmp/zygisk-gadget`. Launch the app yourself afterward to attach. |
+| `fah pengrida gadget_art update <packagename> 17.18.0` | Same, pinned to a specific Pengrida release. |
+| `fah pengrida gadget_art clear <packagename>` | Disable the `zygisk_gadget` module, remove the gadget `.so`/`.config` from the app's data dir, and **reboot the device** (required — zygote keeps injecting until reboot even after disabling the module). Prints the app's pid and checks logcat for `ZygiskGadget` after boot to confirm a clean restore. |
+
+
 ### Android proxy configuration
 
 | Command | Description |
@@ -81,10 +97,8 @@ Recommended flow:
 ### Android certificate creation & installation for mitm purposes
 | Command | Description |
 | --- | --- |
-| `fah cert` | Generate custom CA certificate for MITM use. |
-| `fah cert generate` | Same as `fah cert`. |
-| `fah cert install` | Install a certificate on device. |
-| `fah cert setup` | Generate and install certificate in one step. |
+| `fah cert` | Generate and install certificate in one step. |
+| `fah cert setup` | Same as `fah cert`. |
 
 ### Android app
 | Command | Description |
@@ -133,13 +147,6 @@ Notes:
 Requirements:
 - Rooted device.
 - `tcpdump` available on device (`PATH` or `/data/local/tmp/tcpdump`).
-
-### Android clipboard
-| Command | Description |
-| --- | --- |
-| `fah clip` | Show Android clipboard content. |
-| `fah clip copy` | Same as `fah clip`. |
-| `fah clip paste foo bar` | Set clipboard text to `foo bar`. |
 
 ### Runtime dex dump
 ART `DefineClass` hook + auto collection + device cleanup.

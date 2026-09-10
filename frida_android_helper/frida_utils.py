@@ -32,16 +32,3 @@ def disable_secure_flag(device, pkg_name, activity_name):
     print('📦 {}'.format(pkg_name))
     script = load_script_with_device(device, pkg_name, "disable_secure_flag.js")
     script.exports.disablesecureflag(activity_name)
-
-
-def copy_from_clipboard(device, pkg_name):
-    print('📦 {}'.format(pkg_name))
-    script = load_script_with_device(device, pkg_name, "clipboard.js")
-    script.exports.copyfromclipboard()
-
-
-def paste_to_clipboard(device, pkg_name, data):
-    print("data: '{}'".format(data))
-    print('📦 {}'.format(pkg_name))
-    script = load_script_with_device(device, pkg_name, "clipboard.js")
-    script.exports.pastetoclipboard(data)
