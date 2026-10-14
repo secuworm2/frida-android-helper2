@@ -162,14 +162,15 @@ Reference: inspired by [frida_dump](https://github.com/lasting-yang/frida_dump).
 Host output path:
 - `./fah_dexdump/<deviceSerial>/<package>_<timestamp>/`
 
-### Loaded native libraries
-Lists `.so` libraries currently mapped into a running app's process (from `/proc/<pid>/maps`), and can extract one to the host. Detects libraries that were unlinked from disk after loading (a common anti-tamper trick) and recovers them from process memory via `/proc/<pid>/map_files/`.
+### Loaded native modules
+Lists every module currently loaded into a running app's process from `/proc/<pid>/maps` — native `.so` libraries, the main executable and dynamic linker, ART `.oat`/`.odex`/`.vdex`, and dynamically loaded dex (including in-memory dex from `InMemoryDexClassLoader`) — and can extract one to the host. Detects modules that were unlinked from disk after loading (a common anti-tamper trick) and recovers them from process memory via `/proc/<pid>/map_files/`. Also resolves libraries mapped straight out of the APK (`extractNativeLibs=false`, the default for Flutter and most modern apps), which plain `/proc/<pid>/maps` only shows as a `.apk` path. By default only app-provided modules are listed; pass `--all` to also show system/framework modules.
 
 | Command | Description |
 | --- | --- |
-| `fah native com.example.app` | List native libraries loaded by the app (grouped as app-provided vs system/framework, flags self-erased libraries). |
-| `fah native` | Same, using the currently focused app. |
-| `fah native com.example.app dl libfoo.so` | Extract `libfoo.so` from the running process to the current directory. |
+| `fah native com.example.app` | List app-provided modules loaded by the app (flags self-erased, APK-mapped, and in-memory dex modules). |
+| `fah native com.example.app --all` | Same, plus system/framework modules. |
+| `fah native` | App-provided modules of the currently focused app. |
+| `fah native com.example.app dl libfoo.so` | Extract `libfoo.so` (or any listed module) from the running process, its APK, or process memory to the current directory. |
 
 ## Ideas & bugs
 Ideas and bug reports are welcome! 

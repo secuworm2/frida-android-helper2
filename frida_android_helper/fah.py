@@ -289,14 +289,21 @@ def main():
 
     native_group = subparsers.add_parser(
         "native",
-        help="Inspect native libraries loaded by a running app",
-        description="List native (.so) libraries currently mapped into a running app's process, and optionally extract one to the current directory.",
+        help="Inspect native modules loaded by a running app",
+        description="List modules loaded into a running app's process (native .so libraries, the main executable, the linker,\nART .oat/.odex/.vdex, and dynamically loaded / in-memory dex), and optionally extract one to the current directory.\nBy default only app-provided modules are shown; use --all to also list system/framework modules.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
             "Examples:\n"
             "  fah native com.example.app\n"
+            "  fah native com.example.app --all\n"
             "  fah native com.example.app dl libfoo.so"
         ),
+    )
+    native_group.add_argument(
+        "--all",
+        dest="show_all",
+        action="store_true",
+        help="Also list system/framework modules (default: app-provided only).",
     )
     native_group.add_argument(
         "packagename",
@@ -311,7 +318,7 @@ def main():
         nargs="?",
         default=None,
         choices=("dl",),
-        help="dl: extract a loaded library file to the current directory.",
+        help="dl: extract a loaded module to the current directory.",
     )
     native_group.add_argument(
         "target",
@@ -418,7 +425,7 @@ def main():
             else:
                 download_native_lib(args.packagename, args.target)
         else:
-            list_native_libs(args.packagename)
+            list_native_libs(args.packagename, show_all=args.show_all)
     # print(args) # debugging purposes
 
 
