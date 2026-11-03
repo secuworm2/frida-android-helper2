@@ -14,8 +14,8 @@ It uses `pure-python-adb` to interface with the ADB server.
 
 
 ## Installation
-1. Clone the repository: `git clone https://github.com/secuworm2/frida-android-helper2`
-2. Install with pip: `python -m pip install . --no-cache-dir`
+1. Install from PyPI: `pip install fah2`
+2. Or from source: `git clone https://github.com/secuworm2/frida-android-helper2` then `python -m pip install . --no-cache-dir`
 3. (Optional) Editable install for development: `python -m pip install -e . --no-cache-dir`
 
 
